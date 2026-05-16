@@ -22,17 +22,63 @@ need_root() {
     fi
 }
 
-check_deps() {
-    local missing=()
-    command -v sddm >/dev/null 2>&1 || missing+=("sddm")
-    command -v sddm-greeter >/dev/null 2>&1 || missing+=("sddm")
-    if (( ${#missing[@]} > 0 )); then
-        err "Missing dependencies: ${missing[*]}"
-        echo "  Install with: sudo pacman -S sddm   (Arch/CachyOS/Manjaro)"
-        echo "           or:  sudo apt install sddm (Debian/Ubuntu)"
-        exit 1
+detect_pm() {
+    if   command -v pacman  >/dev/null 2>&1; then echo "pacman"
+    elif command -v dnf     >/dev/null 2>&1; then echo "dnf"
+    elif command -v dnf5    >/dev/null 2>&1; then echo "dnf5"
+    elif command -v zypper  >/dev/null 2>&1; then echo "zypper"
+    elif command -v apt     >/dev/null 2>&1; then echo "apt"
+    elif command -v xbps-install >/dev/null 2>&1; then echo "xbps"
+    elif command -v emerge  >/dev/null 2>&1; then echo "emerge"
+    else echo "unknown"; fi
+}
+
+install_sddm_pkg() {
+    local pm; pm="$(detect_pm)"
+    info "Installing SDDM via $pm..."
+    case "$pm" in
+        pacman) pacman -S --needed --noconfirm sddm ;;
+        dnf|dnf5) "$pm" install -y sddm ;;
+        zypper) zypper --non-interactive install sddm ;;
+        apt)    apt-get update && apt-get install -y sddm ;;
+        xbps)   xbps-install -Sy sddm ;;
+        emerge) emerge --ask=n x11-misc/sddm ;;
+        *) err "Unknown package manager. Install sddm manually."; exit 1 ;;
+    esac
+    ok "SDDM package installed"
+}
+
+enable_sddm_service() {
+    if command -v systemctl >/dev/null 2>&1; then
+        # Disable other DMs first (gdm, lightdm, lxdm) — safe no-op if absent
+        for dm in gdm lightdm lxdm gdm3; do
+            if systemctl is-enabled "$dm" >/dev/null 2>&1; then
+                warn "Disabling $dm.service"
+                systemctl disable "$dm" || true
+            fi
+        done
+        info "Enabling sddm.service..."
+        systemctl enable sddm.service || warn "Could not enable sddm.service"
+        ok "sddm.service enabled (active on next boot)"
     fi
-    ok "Dependencies present"
+}
+
+check_deps() {
+    local need_install=0
+    if ! command -v sddm >/dev/null 2>&1 || ! command -v sddm-greeter >/dev/null 2>&1; then
+        warn "SDDM not found — installing..."
+        need_install=1
+    fi
+    if (( need_install )); then
+        install_sddm_pkg
+        enable_sddm_service
+    else
+        ok "SDDM already installed"
+        # Make sure service is enabled anyway
+        if command -v systemctl >/dev/null 2>&1 && ! systemctl is-enabled sddm.service >/dev/null 2>&1; then
+            enable_sddm_service
+        fi
+    fi
 }
 
 uninstall() {
