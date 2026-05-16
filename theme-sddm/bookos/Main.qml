@@ -213,13 +213,37 @@ Item {
         sddm.login(loginUsername, passwordField.text, currentSessionIndex)
     }
 
+    // Fingerprint availability — true only if user has enrolled prints
+    property bool fingerprintEnrolled: false
+    function checkFingerprint() {
+        // Look for enrolled prints in fprintd storage (root-readable, but readable by user too in some setups)
+        try {
+            var xhr = new XMLHttpRequest()
+            xhr.open("GET", "file:///var/lib/fprint/" + root.loginUsername + "/", false)
+            xhr.send()
+            if (xhr.status === 0 || xhr.status === 200) {
+                if (xhr.responseText && xhr.responseText.length > 0) {
+                    root.fingerprintEnrolled = true
+                    return
+                }
+            }
+        } catch(e) {}
+        // Fallback: per-user state file written by BookOS Settings on enroll
+        try {
+            var xhr2 = new XMLHttpRequest()
+            xhr2.open("GET", "file:///home/" + root.loginUsername + "/.config/bookos-fp-enrolled", false)
+            xhr2.send()
+            root.fingerprintEnrolled = (xhr2.responseText.trim() === "true")
+        } catch(e) { root.fingerprintEnrolled = false }
+    }
+
     Timer {
         id: fpTimer
         interval: 2500
-        running: passwordField.text === "" && !root.loggingIn
+        running: root.fingerprintEnrolled && passwordField.text === "" && !root.loggingIn
         repeat: true
         onTriggered: {
-            if (passwordField.text === "" && !root.loggingIn) {
+            if (root.fingerprintEnrolled && passwordField.text === "" && !root.loggingIn) {
                 root.loggingIn = true
                 root.fingerprintActive = true
                 sddm.login(root.loginUsername, "", currentSessionIndex)
@@ -559,9 +583,10 @@ Item {
             Behavior on opacity { NumberAnimation { duration: 200 } }
         }
 
-        // Fingerprint hint
+        // Fingerprint hint — only shown if enrolled
         Text {
             anchors.horizontalCenter: parent.horizontalCenter
+            visible: root.fingerprintEnrolled
             text: root.fingerprintActive ? "Coloca tu dedo en el lector" : "o usa tu huella dactilar"
             font.pixelSize: 13
             color: root.accentColor
@@ -778,9 +803,13 @@ Item {
     Component.onCompleted: {
         updateBattery()
         readRoutine()
+        checkFingerprint()
         passwordField.forceActiveFocus()
         root.opacity = 1
     }
+
+    // Re-check fingerprint when user switches
+    onLoginUsernameChanged: checkFingerprint()
 
     // Test-mode exit hint (top-right)
     Rectangle {
