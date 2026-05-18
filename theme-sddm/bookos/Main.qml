@@ -8,7 +8,6 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
-import Qt5Compat.GraphicalEffects 1.0
 import SddmComponents 2.0
 
 Item {
@@ -87,7 +86,7 @@ Item {
         cache: false
     }
 
-    // Blur background — Qt6 GaussianBlur via Qt5Compat.GraphicalEffects (works in Qt5+Qt6)
+    // Blur background — ShaderEffect 2-pass gaussian (pure Qt5/Qt6, no extra modules)
     Image {
         id: blurSrc
         anchors.fill: parent
@@ -97,14 +96,65 @@ Item {
         cache: false
         sourceSize.width: Screen.width
         sourceSize.height: Screen.height
+        layer.enabled: true
+        layer.smooth: true
     }
-    GaussianBlur {
+    ShaderEffect {
+        id: blurH
         anchors.fill: parent
-        source: blurSrc
-        radius: Math.min(64, Math.max(8, parseFloat(config.blurRadius || "24")))
-        samples: 33
-        deviation: 8
+        visible: false
+        property variant source: blurSrc
+        property real radius: root.blurRadius
+        property real texSize: width
+        fragmentShader: "
+            uniform sampler2D source;
+            uniform lowp float qt_Opacity;
+            uniform highp float radius;
+            uniform highp float texSize;
+            varying highp vec2 qt_TexCoord0;
+            void main() {
+                highp vec4 c = vec4(0.0);
+                highp float step = radius / texSize;
+                c += texture2D(source, qt_TexCoord0 + vec2(-4.0*step, 0.0)) * 0.05;
+                c += texture2D(source, qt_TexCoord0 + vec2(-3.0*step, 0.0)) * 0.09;
+                c += texture2D(source, qt_TexCoord0 + vec2(-2.0*step, 0.0)) * 0.12;
+                c += texture2D(source, qt_TexCoord0 + vec2(-1.0*step, 0.0)) * 0.15;
+                c += texture2D(source, qt_TexCoord0)                        * 0.18;
+                c += texture2D(source, qt_TexCoord0 + vec2( 1.0*step, 0.0)) * 0.15;
+                c += texture2D(source, qt_TexCoord0 + vec2( 2.0*step, 0.0)) * 0.12;
+                c += texture2D(source, qt_TexCoord0 + vec2( 3.0*step, 0.0)) * 0.09;
+                c += texture2D(source, qt_TexCoord0 + vec2( 4.0*step, 0.0)) * 0.05;
+                gl_FragColor = c * qt_Opacity;
+            }"
+        layer.enabled: true
+        layer.smooth: true
+    }
+    ShaderEffect {
+        anchors.fill: parent
         visible: root.bgMode === "blur" && root.bgImagePath !== ""
+        property variant source: blurH
+        property real radius: root.blurRadius
+        property real texSize: height
+        fragmentShader: "
+            uniform sampler2D source;
+            uniform lowp float qt_Opacity;
+            uniform highp float radius;
+            uniform highp float texSize;
+            varying highp vec2 qt_TexCoord0;
+            void main() {
+                highp vec4 c = vec4(0.0);
+                highp float step = radius / texSize;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0, -4.0*step)) * 0.05;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0, -3.0*step)) * 0.09;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0, -2.0*step)) * 0.12;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0, -1.0*step)) * 0.15;
+                c += texture2D(source, qt_TexCoord0)                        * 0.18;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0,  1.0*step)) * 0.15;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0,  2.0*step)) * 0.12;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0,  3.0*step)) * 0.09;
+                c += texture2D(source, qt_TexCoord0 + vec2(0.0,  4.0*step)) * 0.05;
+                gl_FragColor = c * qt_Opacity;
+            }"
     }
 
     // Semi-transparent overlay for image/blur modes (keeps text readable)
