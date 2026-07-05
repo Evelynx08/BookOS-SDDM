@@ -8,6 +8,7 @@
 import QtQuick 2.15
 import QtQuick.Controls 2.15
 import QtQuick.Layouts 1.15
+import QtQuick.Effects
 import SddmComponents 2.0
 
 Item {
@@ -68,6 +69,12 @@ Item {
     // ── Background mode ───────────────────────────────────────────────────
     readonly property string bgMode:      config.background || "solid"
     readonly property string bgImagePath: config.bgImage    || ""
+    // bgImage puede ser ABSOLUTA (/home/... o /usr/...) o RELATIVA al tema
+    // (p.ej. backgrounds/bookos.png) para que el tema sea autocontenido en la ISO.
+    readonly property url bgImageUrl:
+        bgImagePath === "" ? Qt.resolvedUrl("")
+        : (bgImagePath.charAt(0) === "/" ? ("file://" + bgImagePath)
+                                         : Qt.resolvedUrl(bgImagePath))
 
     // Solid background
     Rectangle {
@@ -80,7 +87,7 @@ Item {
     Image {
         id: bgImage
         anchors.fill: parent
-        source: root.bgImagePath !== "" ? ("file://" + root.bgImagePath) : ""
+        source: root.bgImageUrl
         fillMode: Image.PreserveAspectCrop
         visible: root.bgMode === "image" && root.bgImagePath !== ""
         cache: false
@@ -90,7 +97,7 @@ Item {
     Image {
         id: blurSrc
         anchors.fill: parent
-        source: root.bgImagePath !== "" ? ("file://" + root.bgImagePath) : ""
+        source: root.bgImageUrl
         fillMode: Image.PreserveAspectCrop
         visible: false
         cache: false
@@ -98,6 +105,16 @@ Item {
         sourceSize.height: Screen.height
         layer.enabled: true
         layer.smooth: true
+    }
+    // Blur Qt6 nativo (los ShaderEffect GLSL de abajo no compilan en Qt6 → quedan inertes)
+    MultiEffect {
+        anchors.fill: parent
+        source: blurSrc
+        visible: root.bgMode === "blur" && root.bgImagePath !== ""
+        blurEnabled: true
+        blur: 1.0
+        blurMax: 64
+        autoPaddingEnabled: false
     }
     ShaderEffect {
         id: blurH
@@ -131,7 +148,7 @@ Item {
     }
     ShaderEffect {
         anchors.fill: parent
-        visible: root.bgMode === "blur" && root.bgImagePath !== ""
+        visible: false   // shader GLSL no soportado en Qt6; el blur lo hace MultiEffect
         property variant source: blurH
         property real radius: root.blurRadius
         property real texSize: height
